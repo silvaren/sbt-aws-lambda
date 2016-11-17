@@ -19,6 +19,7 @@ object AwsLambdaPlugin extends AutoPlugin {
     val awsLambdaTimeout = settingKey[Option[Int]]("The Lambda timeout length in seconds (1-300)")
     val awsLambdaMemory = settingKey[Option[Int]]("The amount of memory in MB for the Lambda function (128-1536, multiple of 64)")
     val lambdaHandlers = settingKey[Seq[(String, String)]]("A sequence of pairs of Lambda function names to handlers (for multiple handlers in one jar)")
+    val deployMethod = settingKey[Option[String]]("S3 for using an S3 bucket to upload the jar or ZIP for directly uploading a ZIP file.")
   }
 
   import autoImport._
@@ -27,6 +28,7 @@ object AwsLambdaPlugin extends AutoPlugin {
 
   override lazy val projectSettings = Seq(
     updateLambda := doUpdateLambda(
+      deployMethod = deployMethod.value,
       region = region.value,
       jar = sbtassembly.AssemblyKeys.assembly.value,
       s3Bucket = s3Bucket.value,
@@ -53,28 +55,42 @@ object AwsLambdaPlugin extends AutoPlugin {
     lambdaHandlers := List.empty[(String, String)],
     roleArn := None,
     region := Some("us-east-1"),
+    deployMethod := Some("S3"),
     awsLambdaMemory := None,
     awsLambdaTimeout := None
   )
 
-  private def doUpdateLambda(region: Option[String], jar: File, s3Bucket: Option[String], s3KeyPrefix: Option[String], lambdaName: Option[String], 
-      handlerName: Option[String], lambdaHandlers: Seq[(String, String)]): Map[String, LambdaARN] = {
+  private def doUpdateLambda(deployMethod: Option[String], region: Option[String], jar: File, s3Bucket: Option[String], s3KeyPrefix: Option[String],
+                             lambdaName: Option[String], handlerName: Option[String], lambdaHandlers: Seq[(String, String)]): Map[String, LambdaARN] = {
+    val resolvedDeployMethod = resolveDeployMethod(deployMethod)
     val resolvedRegion = resolveRegion(region)
-    val resolvedBucketId = resolveBucketId(s3Bucket)
-    val resolvedS3KeyPrefix = resolveS3KeyPrefix(s3KeyPrefix)
     val resolvedLambdaHandlers = resolveLambdaHandlers(lambdaName, handlerName, lambdaHandlers)
 
-    AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
-      case Success(s3Key) => (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-        AwsLambda.updateLambda(resolvedRegion, resolvedLambdaName, resolvedBucketId, s3Key) match {
+    if (resolvedDeployMethod.value == "S3") {
+      val resolvedBucketId = resolveBucketId(s3Bucket)
+      val resolvedS3KeyPrefix = resolveS3KeyPrefix(s3KeyPrefix)
+
+      AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
+        case Success(s3Key) => (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
+          AwsLambda.updateLambda(resolvedRegion, resolvedLambdaName, resolvedBucketId, s3Key) match {
+            case Success(updateFunctionCodeResult) =>
+              resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
+            case Failure(exception) =>
+              sys.error(s"Error updating lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
+          }
+        }).toMap
+        case Failure(exception) =>
+          sys.error(s"Error uploading jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
+      }
+    } else {
+      (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
+        AwsLambda.updateLambdaWithZip(resolvedRegion, resolvedLambdaName, jar) match {
           case Success(updateFunctionCodeResult) =>
             resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
           case Failure(exception) =>
             sys.error(s"Error updating lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
         }
       }).toMap
-      case Failure(exception) =>
-        sys.error(s"Error uploading jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
     }
   }
 
@@ -106,6 +122,9 @@ object AwsLambdaPlugin extends AutoPlugin {
   private def resolveRegion(sbtSettingValueOpt: Option[String]): Region =
     sbtSettingValueOpt orElse sys.env.get(EnvironmentVariables.region) map Region getOrElse promptUserForRegion()
 
+  private def resolveDeployMethod(sbtSettingValueOpt: Option[String]): DeployMethod =
+    sbtSettingValueOpt orElse sys.env.get(EnvironmentVariables.deployMethod) map DeployMethod getOrElse promptUserForDeployMethod()
+
   private def resolveBucketId(sbtSettingValueOpt: Option[String]): S3BucketId =
     sbtSettingValueOpt orElse sys.env.get(EnvironmentVariables.bucketId) map S3BucketId getOrElse promptUserForS3BucketId()
 
@@ -135,6 +154,12 @@ object AwsLambdaPlugin extends AutoPlugin {
     val inputValue = readInput(s"Enter the name of the AWS region to connect to. (You also could have set the environment variable: ${EnvironmentVariables.region} or the sbt setting: region)")
 
     Region(inputValue)
+  }
+
+  private def promptUserForDeployMethod(): DeployMethod = {
+    val inputValue = readInput(s"Enter the method of deploy you want to use (S3 or ZIP). (You also could have set the environment variable: ${EnvironmentVariables.deployMethod} or the sbt setting: deployMethod)")
+
+    DeployMethod(inputValue)
   }
 
   private def promptUserForS3BucketId(): S3BucketId = {
