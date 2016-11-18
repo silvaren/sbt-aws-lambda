@@ -101,12 +101,12 @@ object AwsLambdaPlugin extends AutoPlugin {
     val resolvedRegion = resolveRegion(region)
     val resolvedLambdaHandlers = resolveLambdaHandlers(lambdaName, handlerName, lambdaHandlers)
     val resolvedRoleName = resolveRoleARN(roleArn)
-    val resolvedBucketId = resolveBucketId(s3Bucket)
-    val resolvedS3KeyPrefix = resolveS3KeyPrefix(s3KeyPrefix)
     val resolvedTimeout = resolveTimeout(timeout)
     val resolvedMemory = resolveMemory(memory)
 
     if (resolvedDeployMethod.value == "S3") {
+      val resolvedBucketId = resolveBucketId(s3Bucket)
+      val resolvedS3KeyPrefix = resolveS3KeyPrefix(s3KeyPrefix)
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) =>
           for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
