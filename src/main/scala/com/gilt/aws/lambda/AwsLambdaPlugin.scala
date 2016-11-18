@@ -1,10 +1,8 @@
 package com.gilt.aws.lambda
 
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-
 import com.amazonaws.services.lambda.model.{FunctionCode, UpdateFunctionCodeRequest}
 import sbt._
+import com.gilt.aws.lambda.AwsLambda._
 
 import scala.util.{Failure, Success}
 
@@ -102,25 +100,6 @@ object AwsLambdaPlugin extends AutoPlugin {
     }
   }
 
-  def createUpdateFunctionCodeRequestFromS3(resolvedBucketId: S3BucketId, s3Key: S3Key, resolvedLambdaName: LambdaName): UpdateFunctionCodeRequest = {
-    val updateFunctionCodeRequest = {
-      val r = new UpdateFunctionCodeRequest()
-      r.setFunctionName(resolvedLambdaName.value)
-      r.setS3Bucket(resolvedBucketId.value)
-      r.setS3Key(s3Key.value)
-      r
-    }
-    updateFunctionCodeRequest
-  }
-
-  def createUpdateFunctionCodeRequestFromJar(jar: File, resolvedLambdaName: LambdaName): UpdateFunctionCodeRequest = {
-    val r = new UpdateFunctionCodeRequest()
-    r.setFunctionName(resolvedLambdaName.value)
-    val buffer = getJarBuffer(jar)
-    r.setZipFile(buffer)
-    r
-  }
-
   private def doCreateLambda(deployMethod: Option[String], region: Option[String], jar: File, s3Bucket: Option[String], s3KeyPrefix: Option[String], lambdaName: Option[String],
                              handlerName: Option[String], lambdaHandlers: Seq[(String, String)], roleArn: Option[String], timeout: Option[Int], memory: Option[Int]): Map[String, LambdaARN] = {
     val resolvedDeployMethod = resolveDeployMethod(deployMethod)
@@ -162,20 +141,6 @@ object AwsLambdaPlugin extends AutoPlugin {
       case Failure(exception) =>
         sys.error(s"Failed to create lambda function: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
     }
-  }
-
-  def createFunctionCodeFromS3(jar: File, resolvedBucketId: S3BucketId): FunctionCode = {
-    val c = new FunctionCode
-    c.setS3Bucket(resolvedBucketId.value)
-    c.setS3Key(jar.getName)
-    c
-  }
-
-  def createFunctionCodeFromJar(jar: File): FunctionCode = {
-    val c = new FunctionCode
-    val buffer = getJarBuffer(jar)
-    c.setZipFile(buffer)
-    c
   }
 
   private def resolveRegion(sbtSettingValueOpt: Option[String]): Region =
@@ -282,15 +247,4 @@ object AwsLambdaPlugin extends AutoPlugin {
 
       readInput(updatedPrompt)
     }
-
-
-  def getJarBuffer(jar: File): ByteBuffer = {
-    val buffer = ByteBuffer.allocate(jar.length().toInt)
-    val aFile = new RandomAccessFile(jar, "r")
-    val inChannel = aFile.getChannel()
-    while (inChannel.read(buffer) > 0) {}
-    inChannel.close()
-    buffer.rewind()
-    buffer
-  }
 }
