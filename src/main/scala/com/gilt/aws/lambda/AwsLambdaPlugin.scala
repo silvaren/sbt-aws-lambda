@@ -1,5 +1,9 @@
 package com.gilt.aws.lambda
 
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+
+import com.amazonaws.services.lambda.model.{FunctionCode, UpdateFunctionCodeRequest}
 import sbt._
 
 import scala.util.{Failure, Success}
@@ -73,7 +77,15 @@ object AwsLambdaPlugin extends AutoPlugin {
 
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) => (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-          AwsLambda.updateLambda(resolvedRegion, resolvedLambdaName, resolvedBucketId, s3Key) match {
+          val updateFunctionCodeRequest = {
+            val r = new UpdateFunctionCodeRequest()
+            r.setFunctionName(resolvedLambdaName.value)
+            r.setS3Bucket(resolvedBucketId.value)
+            r.setS3Key(s3Key.value)
+            r
+          }
+
+          AwsLambda.updateLambdaWithFunctionCodeRequest(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest) match {
             case Success(updateFunctionCodeResult) =>
               resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
             case Failure(exception) =>
@@ -85,7 +97,15 @@ object AwsLambdaPlugin extends AutoPlugin {
       }
     } else {
       (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-        AwsLambda.updateLambdaWithJar(resolvedRegion, resolvedLambdaName, jar) match {
+        val updateFunctionCodeRequest = {
+          val r = new UpdateFunctionCodeRequest()
+          r.setFunctionName(resolvedLambdaName.value)
+          val buffer = getJarBuffer(jar)
+          r.setZipFile(buffer)
+          r
+        }
+
+        AwsLambda.updateLambdaWithFunctionCodeRequest(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest) match {
           case Success(updateFunctionCodeResult) =>
             resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
           case Failure(exception) =>
@@ -110,7 +130,15 @@ object AwsLambdaPlugin extends AutoPlugin {
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) =>
           for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-            AwsLambda.createLambda(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName, resolvedBucketId, resolvedTimeout, resolvedMemory) match {
+            val functionCode = {
+              val c = new FunctionCode
+              c.setS3Bucket(resolvedBucketId.value)
+              c.setS3Key(jar.getName)
+              c
+            }
+
+            AwsLambda.createLambdaWithFunctionCode(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName,
+              resolvedTimeout, resolvedMemory, functionCode) match {
               case Success(createFunctionCodeResult) =>
                 resolvedLambdaName.value -> LambdaARN(createFunctionCodeResult.getFunctionArn)
               case Failure(exception) =>
@@ -122,7 +150,15 @@ object AwsLambdaPlugin extends AutoPlugin {
       }
     } else {
       (for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-        AwsLambda.createLambdaWithJar(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName, resolvedTimeout, resolvedMemory) match {
+        val functionCode = {
+          val c = new FunctionCode
+          val buffer = getJarBuffer(jar)
+          c.setZipFile(buffer)
+          c
+        }
+
+        AwsLambda.createLambdaWithFunctionCode(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName,
+          resolvedTimeout, resolvedMemory, functionCode) match {
           case Success(createFunctionCodeResult) =>
             resolvedLambdaName.value -> LambdaARN(createFunctionCodeResult.getFunctionArn)
           case Failure(exception) =>
@@ -236,4 +272,15 @@ object AwsLambdaPlugin extends AutoPlugin {
 
       readInput(updatedPrompt)
     }
+
+
+  def getJarBuffer(jar: File): ByteBuffer = {
+    val buffer = ByteBuffer.allocate(jar.length().toInt)
+    val aFile = new RandomAccessFile(jar, "r")
+    val inChannel = aFile.getChannel()
+    while (inChannel.read(buffer) > 0) {}
+    inChannel.close()
+    buffer.rewind()
+    buffer
+  }
 }
