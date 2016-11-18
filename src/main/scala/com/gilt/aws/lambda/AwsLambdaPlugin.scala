@@ -2,7 +2,6 @@ package com.gilt.aws.lambda
 
 import com.amazonaws.services.lambda.model.{FunctionCode, UpdateFunctionCodeRequest}
 import sbt._
-import com.gilt.aws.lambda.AwsLambda._
 
 import scala.util.{Failure, Success}
 
@@ -75,7 +74,7 @@ object AwsLambdaPlugin extends AutoPlugin {
 
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) => (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-          val updateFunctionCodeRequest = createUpdateFunctionCodeRequestFromS3(resolvedBucketId, s3Key, resolvedLambdaName)
+          val updateFunctionCodeRequest = AwsLambda.createUpdateFunctionCodeRequestFromS3(resolvedBucketId, s3Key, resolvedLambdaName)
 
           updateFunctionCode(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest)
         }).toMap
@@ -84,7 +83,7 @@ object AwsLambdaPlugin extends AutoPlugin {
       }
     } else {
       (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-        val updateFunctionCodeRequest = createUpdateFunctionCodeRequestFromJar(jar, resolvedLambdaName)
+        val updateFunctionCodeRequest = AwsLambda.createUpdateFunctionCodeRequestFromJar(jar, resolvedLambdaName)
 
         updateFunctionCode(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest)
       }).toMap
@@ -115,7 +114,7 @@ object AwsLambdaPlugin extends AutoPlugin {
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) =>
           for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-            val functionCode = createFunctionCodeFromS3(jar, resolvedBucketId)
+            val functionCode = AwsLambda.createFunctionCodeFromS3(jar, resolvedBucketId)
 
             createLambdaWithFunctionCode(jar, resolvedRegion, resolvedRoleName, resolvedTimeout, resolvedMemory,
               resolvedLambdaName, resolvedHandlerName, functionCode)
@@ -125,7 +124,7 @@ object AwsLambdaPlugin extends AutoPlugin {
       }
     } else {
       (for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-        val functionCode = createFunctionCodeFromJar(jar)
+        val functionCode = AwsLambda.createFunctionCodeFromJar(jar)
 
         createLambdaWithFunctionCode(jar, resolvedRegion, resolvedRoleName, resolvedTimeout, resolvedMemory,
           resolvedLambdaName, resolvedHandlerName, functionCode)
