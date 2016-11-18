@@ -72,52 +72,30 @@ private[lambda] object AwsLambda {
                    roleName: RoleARN,
                    s3BucketId: S3BucketId,
                    timeout:  Option[Timeout],
-                   memory: Option[Memory]
-                    ): Try[CreateFunctionResult] = {
-    try {
-      val client = new AWSLambdaClient(AwsCredentials.provider)
-      client.setRegion(RegionUtils.getRegion(region.value))
+                   memory: Option[Memory],
+                   deployMethod: String
+                  ): Try[CreateFunctionResult] = {
+    val functionCode = new FunctionCode
 
-      val request = {
-        val r = new CreateFunctionRequest()
-        r.setFunctionName(functionName.value)
-        r.setHandler(handlerName.value)
-        r.setRole(roleName.value)
-        r.setRuntime(com.amazonaws.services.lambda.model.Runtime.Java8)
-        if(timeout.isDefined) r.setTimeout(timeout.get.value)
-        if(memory.isDefined)  r.setMemorySize(memory.get.value)
-
-        val functionCode = {
-          val c = new FunctionCode
-          c.setS3Bucket(s3BucketId.value)
-          c.setS3Key(jar.getName)
-          c
-        }
-
-        r.setCode(functionCode)
-
-        r
-      }
-
-      val createResult = client.createFunction(request)
-
-      println(s"Created Lambda: ${createResult.getFunctionArn}")
-      Success(createResult)
+    if (deployMethod == "S3") {
+        functionCode.setS3Bucket(s3BucketId.value)
+        functionCode.setS3Key(jar.getName)
+    } else {
+        val buffer = getJarBuffer(jar)
+        functionCode.setZipFile(buffer)
     }
-    catch {
-      case ex @ (_ : AmazonClientException |
-                 _ : AmazonServiceException) =>
-        Failure(ex)
-    }
+
+    createLambdaWithFunctionCode(region, jar, functionName, handlerName, roleName, timeout, memory, functionCode)
   }
 
-  def createLambdaWithJar(region: Region,
+  def createLambdaWithFunctionCode(region: Region,
                    jar: File,
                    functionName: LambdaName,
                    handlerName: HandlerName,
                    roleName: RoleARN,
                    timeout:  Option[Timeout],
-                   memory: Option[Memory]
+                   memory: Option[Memory],
+                   functionCode: FunctionCode
                   ): Try[CreateFunctionResult] = {
     try {
       val client = new AWSLambdaClient(AwsCredentials.provider)
@@ -131,16 +109,6 @@ private[lambda] object AwsLambda {
         r.setRuntime(com.amazonaws.services.lambda.model.Runtime.Java8)
         if(timeout.isDefined) r.setTimeout(timeout.get.value)
         if(memory.isDefined)  r.setMemorySize(memory.get.value)
-
-        val functionCode = {
-          val c = new FunctionCode
-
-          val buffer = getJarBuffer(jar)
-          c.setZipFile(buffer)
-
-          c
-        }
-
         r.setCode(functionCode)
 
         r
