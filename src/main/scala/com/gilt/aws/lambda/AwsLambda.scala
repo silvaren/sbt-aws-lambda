@@ -47,11 +47,7 @@ private[lambda] object AwsLambda {
         val r = new UpdateFunctionCodeRequest()
         r.setFunctionName(lambdaName.value)
 
-        val buffer  = ByteBuffer.allocate(jar.length().toInt)
-        val aFile = new RandomAccessFile(jar, "r")
-        val inChannel = aFile.getChannel()
-        while (inChannel.read(buffer) > 0) {}
-        buffer.rewind()
+        val buffer = getJarBuffer(jar)
         r.setZipFile(buffer)
 
         r
@@ -139,11 +135,7 @@ private[lambda] object AwsLambda {
         val functionCode = {
           val c = new FunctionCode
 
-          val buffer  = ByteBuffer.allocate(jar.length().toInt)
-          val aFile = new RandomAccessFile(jar, "r")
-          val inChannel = aFile.getChannel()
-          while (inChannel.read(buffer) > 0) {}
-          buffer.rewind()
+          val buffer = getJarBuffer(jar)
           c.setZipFile(buffer)
 
           c
@@ -166,4 +158,13 @@ private[lambda] object AwsLambda {
     }
   }
 
+  def getJarBuffer(jar: File): ByteBuffer = {
+    val buffer = ByteBuffer.allocate(jar.length().toInt)
+    val aFile = new RandomAccessFile(jar, "r")
+    val inChannel = aFile.getChannel()
+    while (inChannel.read(buffer) > 0) {}
+    inChannel.close()
+    buffer.rewind()
+    buffer
+  }
 }
