@@ -77,46 +77,52 @@ object AwsLambdaPlugin extends AutoPlugin {
 
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) => (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-          val updateFunctionCodeRequest = {
-            val r = new UpdateFunctionCodeRequest()
-            r.setFunctionName(resolvedLambdaName.value)
-            r.setS3Bucket(resolvedBucketId.value)
-            r.setS3Key(s3Key.value)
-            r
-          }
+          val updateFunctionCodeRequest = createUpdateFunctionCodeRequestFromS3(resolvedBucketId, s3Key, resolvedLambdaName)
 
-          AwsLambda.updateLambdaWithFunctionCodeRequest(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest) match {
-            case Success(updateFunctionCodeResult) =>
-              resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
-            case Failure(exception) =>
-              sys.error(s"Error updating lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
-          }
+          updateFunctionCode(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest)
         }).toMap
         case Failure(exception) =>
           sys.error(s"Error uploading jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
       }
     } else {
       (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
-        val updateFunctionCodeRequest = {
-          val r = new UpdateFunctionCodeRequest()
-          r.setFunctionName(resolvedLambdaName.value)
-          val buffer = getJarBuffer(jar)
-          r.setZipFile(buffer)
-          r
-        }
+        val updateFunctionCodeRequest = createUpdateFunctionCodeRequestFromJar(jar, resolvedLambdaName)
 
-        AwsLambda.updateLambdaWithFunctionCodeRequest(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest) match {
-          case Success(updateFunctionCodeResult) =>
-            resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
-          case Failure(exception) =>
-            sys.error(s"Error updating lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
-        }
+        updateFunctionCode(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest)
       }).toMap
     }
   }
 
+  def updateFunctionCode(resolvedRegion: Region, resolvedLambdaName: LambdaName, updateFunctionCodeRequest: UpdateFunctionCodeRequest): (String, LambdaARN) = {
+    AwsLambda.updateLambdaWithFunctionCodeRequest(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest) match {
+      case Success(updateFunctionCodeResult) =>
+        resolvedLambdaName.value -> LambdaARN(updateFunctionCodeResult.getFunctionArn)
+      case Failure(exception) =>
+        sys.error(s"Error updating lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
+    }
+  }
+
+  def createUpdateFunctionCodeRequestFromS3(resolvedBucketId: S3BucketId, s3Key: S3Key, resolvedLambdaName: LambdaName): UpdateFunctionCodeRequest = {
+    val updateFunctionCodeRequest = {
+      val r = new UpdateFunctionCodeRequest()
+      r.setFunctionName(resolvedLambdaName.value)
+      r.setS3Bucket(resolvedBucketId.value)
+      r.setS3Key(s3Key.value)
+      r
+    }
+    updateFunctionCodeRequest
+  }
+
+  def createUpdateFunctionCodeRequestFromJar(jar: File, resolvedLambdaName: LambdaName): UpdateFunctionCodeRequest = {
+    val r = new UpdateFunctionCodeRequest()
+    r.setFunctionName(resolvedLambdaName.value)
+    val buffer = getJarBuffer(jar)
+    r.setZipFile(buffer)
+    r
+  }
+
   private def doCreateLambda(deployMethod: Option[String], region: Option[String], jar: File, s3Bucket: Option[String], s3KeyPrefix: Option[String], lambdaName: Option[String],
-      handlerName: Option[String], lambdaHandlers: Seq[(String, String)], roleArn: Option[String], timeout: Option[Int], memory: Option[Int]): Map[String, LambdaARN] = {
+                             handlerName: Option[String], lambdaHandlers: Seq[(String, String)], roleArn: Option[String], timeout: Option[Int], memory: Option[Int]): Map[String, LambdaARN] = {
     val resolvedDeployMethod = resolveDeployMethod(deployMethod)
     val resolvedRegion = resolveRegion(region)
     val resolvedLambdaHandlers = resolveLambdaHandlers(lambdaName, handlerName, lambdaHandlers)
@@ -130,42 +136,46 @@ object AwsLambdaPlugin extends AutoPlugin {
       AwsS3.pushJarToS3(jar, resolvedBucketId, resolvedS3KeyPrefix) match {
         case Success(s3Key) =>
           for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-            val functionCode = {
-              val c = new FunctionCode
-              c.setS3Bucket(resolvedBucketId.value)
-              c.setS3Key(jar.getName)
-              c
-            }
+            val functionCode = createFunctionCodeFromS3(jar, resolvedBucketId)
 
-            AwsLambda.createLambdaWithFunctionCode(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName,
-              resolvedTimeout, resolvedMemory, functionCode) match {
-              case Success(createFunctionCodeResult) =>
-                resolvedLambdaName.value -> LambdaARN(createFunctionCodeResult.getFunctionArn)
-              case Failure(exception) =>
-                sys.error(s"Failed to create lambda function: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
-            }
+            createLambdaWithFunctionCode(jar, resolvedRegion, resolvedRoleName, resolvedTimeout, resolvedMemory,
+              resolvedLambdaName, resolvedHandlerName, functionCode)
           }
         case Failure(exception) =>
           sys.error(s"Error upload jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
       }
     } else {
       (for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
-        val functionCode = {
-          val c = new FunctionCode
-          val buffer = getJarBuffer(jar)
-          c.setZipFile(buffer)
-          c
-        }
+        val functionCode = createFunctionCodeFromJar(jar)
 
-        AwsLambda.createLambdaWithFunctionCode(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName,
-          resolvedTimeout, resolvedMemory, functionCode) match {
-          case Success(createFunctionCodeResult) =>
-            resolvedLambdaName.value -> LambdaARN(createFunctionCodeResult.getFunctionArn)
-          case Failure(exception) =>
-            sys.error(s"Failed to create lambda function: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
-        }
+        createLambdaWithFunctionCode(jar, resolvedRegion, resolvedRoleName, resolvedTimeout, resolvedMemory,
+          resolvedLambdaName, resolvedHandlerName, functionCode)
       })
     }
+  }
+
+  def createLambdaWithFunctionCode(jar: File, resolvedRegion: Region, resolvedRoleName: RoleARN, resolvedTimeout: Option[Timeout], resolvedMemory: Option[Memory], resolvedLambdaName: LambdaName, resolvedHandlerName: HandlerName, functionCode: FunctionCode): (String, LambdaARN) = {
+    AwsLambda.createLambdaWithFunctionCode(resolvedRegion, jar, resolvedLambdaName, resolvedHandlerName, resolvedRoleName,
+      resolvedTimeout, resolvedMemory, functionCode) match {
+      case Success(createFunctionCodeResult) =>
+        resolvedLambdaName.value -> LambdaARN(createFunctionCodeResult.getFunctionArn)
+      case Failure(exception) =>
+        sys.error(s"Failed to create lambda function: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
+    }
+  }
+
+  def createFunctionCodeFromS3(jar: File, resolvedBucketId: S3BucketId): FunctionCode = {
+    val c = new FunctionCode
+    c.setS3Bucket(resolvedBucketId.value)
+    c.setS3Key(jar.getName)
+    c
+  }
+
+  def createFunctionCodeFromJar(jar: File): FunctionCode = {
+    val c = new FunctionCode
+    val buffer = getJarBuffer(jar)
+    c.setZipFile(buffer)
+    c
   }
 
   private def resolveRegion(sbtSettingValueOpt: Option[String]): Region =
