@@ -1,8 +1,5 @@
 package com.gilt.aws.lambda
 
-import java.io.RandomAccessFile
-import java.nio.ByteBuffer
-
 import com.amazonaws.regions.RegionUtils
 import com.amazonaws.{AmazonClientException, AmazonServiceException}
 import com.amazonaws.services.lambda.AWSLambdaClient
