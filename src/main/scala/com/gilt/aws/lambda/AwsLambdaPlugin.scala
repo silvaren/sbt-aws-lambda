@@ -20,7 +20,7 @@ object AwsLambdaPlugin extends AutoPlugin {
     val awsLambdaTimeout = settingKey[Option[Int]]("The Lambda timeout length in seconds (1-300)")
     val awsLambdaMemory = settingKey[Option[Int]]("The amount of memory in MB for the Lambda function (128-1536, multiple of 64)")
     val lambdaHandlers = settingKey[Seq[(String, String)]]("A sequence of pairs of Lambda function names to handlers (for multiple handlers in one jar)")
-    val deployMethod = settingKey[Option[String]]("S3 for using an S3 bucket to upload the jar or JAR for directly uploading a JAR file.")
+    val deployMethod = settingKey[Option[String]]("S3 for using an S3 bucket to upload the jar or DIRECT for directly uploading a jar file.")
   }
 
   import autoImport._
@@ -81,13 +81,14 @@ object AwsLambdaPlugin extends AutoPlugin {
         case Failure(exception) =>
           sys.error(s"Error uploading jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
       }
-    } else {
+    } else if (resolvedDeployMethod.value == "DIRECT") {
       (for (resolvedLambdaName <- resolvedLambdaHandlers.keys) yield {
         val updateFunctionCodeRequest = AwsLambda.createUpdateFunctionCodeRequestFromJar(jar, resolvedLambdaName)
 
         updateFunctionCode(resolvedRegion, resolvedLambdaName, updateFunctionCodeRequest)
       }).toMap
-    }
+    } else
+      sys.error(s"Unsupported deploy method: ${resolvedDeployMethod.value}")
   }
 
   def updateFunctionCode(resolvedRegion: Region, resolvedLambdaName: LambdaName, updateFunctionCodeRequest: UpdateFunctionCodeRequest): (String, LambdaARN) = {
@@ -122,14 +123,15 @@ object AwsLambdaPlugin extends AutoPlugin {
         case Failure(exception) =>
           sys.error(s"Error upload jar to S3 lambda: ${exception.getLocalizedMessage}\n${exception.getStackTraceString}")
       }
-    } else {
+    } else if (resolvedDeployMethod.value == "DIRECT") {
       (for ((resolvedLambdaName, resolvedHandlerName) <- resolvedLambdaHandlers) yield {
         val functionCode = AwsLambda.createFunctionCodeFromJar(jar)
 
         createLambdaWithFunctionCode(jar, resolvedRegion, resolvedRoleName, resolvedTimeout, resolvedMemory,
           resolvedLambdaName, resolvedHandlerName, functionCode)
       })
-    }
+    } else
+      sys.error(s"Unsupported deploy method: ${resolvedDeployMethod.value}")
   }
 
   def createLambdaWithFunctionCode(jar: File, resolvedRegion: Region, resolvedRoleName: RoleARN, resolvedTimeout: Option[Timeout], resolvedMemory: Option[Memory], resolvedLambdaName: LambdaName, resolvedHandlerName: HandlerName, functionCode: FunctionCode): (String, LambdaARN) = {
@@ -180,7 +182,7 @@ object AwsLambdaPlugin extends AutoPlugin {
   }
 
   private def promptUserForDeployMethod(): DeployMethod = {
-    val inputValue = readInput(s"Enter the method of deploy you want to use (S3 or JAR). (You also could have set the environment variable: ${EnvironmentVariables.deployMethod} or the sbt setting: deployMethod)")
+    val inputValue = readInput(s"Enter the method of deploy you want to use (S3 or DIRECT). (You also could have set the environment variable: ${EnvironmentVariables.deployMethod} or the sbt setting: deployMethod)")
 
     DeployMethod(inputValue)
   }

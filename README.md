@@ -45,7 +45,7 @@ sbt-aws-lambda can be configured using sbt settings, environment variables or by
 | awsLambdaTimeout |            | The Lambda timeout in seconds (1-300). Defaults to AWS default. |
 | awsLambdaMemory |             | The amount of memory in MB for the Lambda function (128-1536, multiple of 64). Defaults to AWS default. |
 | lambdaHandlers |              | Sequence of Lambda names to handler functions (for multiple lambda methods per project). Overrides `lambdaName` and `handlerName` if present. | 
-| deployMethod |                | The preferred method for uploading the jar, either `S3` for uploading to AWS S3 or `JAR` for direct upload to AWS Lambda |
+| deployMethod |                | The preferred method for uploading the jar, either `S3` for uploading to AWS S3 or `DIRECT` for direct upload to AWS Lambda |
 
 An example configuration might look like this:
 
