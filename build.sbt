@@ -8,7 +8,7 @@ version in ThisBuild := "git describe --tags --always --dirty".!!.trim.replaceFi
 
 addSbtPlugin("com.eed3si9n" % "sbt-assembly" % "0.14.3")
 
-val awsSdkVersion = "1.10.77"
+val awsSdkVersion = "1.11.66"
 
 libraryDependencies ++= Seq(
   "com.amazonaws"  % "aws-java-sdk-iam"    % awsSdkVersion,
@@ -16,4 +16,4 @@ libraryDependencies ++= Seq(
   "com.amazonaws"  % "aws-java-sdk-s3"     % awsSdkVersion
 )
 
-javaVersionPrefix in javaVersionCheck := Some("1.7")
+javaVersionPrefix in javaVersionCheck := Some("1.8")
